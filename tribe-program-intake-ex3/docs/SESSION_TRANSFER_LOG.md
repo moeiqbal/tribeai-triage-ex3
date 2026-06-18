@@ -62,3 +62,15 @@ One entry per phase / agent execution.
 - **Verification:** type-check clean for the new file; only the known Phase-3 RED test import remains; committed with explicit path (no leakage).
 - **Notes / deviations:** none. Verified Zod 4 syntax against current docs before writing (don't-trust-but-verify) rather than coding from memory.
 - **Next:** Phase 3 — AI triage (parser unit `lib/ai/parse.ts` + network caller `lib/ai-triage.ts`)
+
+---
+## Phase 3 — AI triage (parser unit + network call)
+- **When:** 2026-06-18T23:17:44Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Created `lib/ai/parse.ts` (`parseAiResponse`) — pure, no network/DB, never throws: strips ```` ```json ```` fences, `JSON.parse`s, validates against `aiTriageOutputSchema`; any failure → `status: "needs_review"` with `raw` retained. Created `lib/ai-triage.ts` (`runAiTriage`) — DeepSeek call via the `openai` SDK (baseURL `https://api.deepseek.com`, 20s timeout, `response_format: { type: "json_object" }`, model `deepseek-chat`), delegates parsing to `parseAiResponse`; both failure modes (call fails / output unparseable) converge on `{ status: "needs_review" }`, success returns `{ status: "completed", summary, tags, risks }`. Both files verbatim from the plan.
+- **Files touched:** `lib/ai/parse.ts` (new), `lib/ai-triage.ts` (new), `package.json` + `package-lock.json` (openai dep).
+- **Commands run + result:** `.env` confirmed to contain `DEEPSEEK_API_KEY`; `npm install openai@6.44.0` → installed (v6.44.0 confirmed); `find-docs` (ctx7 `/websites/developers_openai_api`) confirmed the `new OpenAI({...})` constructor-options + `chat.completions.create` pattern still current for the Node SDK; `npx tsc --noEmit` → CLEAN (parser now resolves the test import — the prior known RED error is gone); `npx vitest run lib/ai/parse.test.ts` → 6/6 PASS. No real API call made (parser tested with hardcoded strings; live call deferred to Phase 8).
+- **Commit:** `3700ddb` feat(ai): add AI response parser unit and DeepSeek triage caller
+- **Verification:** full type-check clean; pre-authored parser contract green (well-formed, fenced, prose, missing-field, truncated, empty all covered); committed with explicit paths.
+- **Notes / deviations:** ⚠️ Observed `docs/HANDOFF.md` showing as DELETED in the working tree (`D` in `git status`) — NOT done by this phase and NOT included in the Phase 3 commit (staged explicit paths only). Left untouched/unstaged for the user to decide. The DeepSeek model name (`deepseek-chat`) remains the plan default per the open TBD; not validated against the live API yet (Phase 8).
+- **Next:** Phase 4 — API routes (`app/api/intakes/route.ts` POST/GET + `[id]` GET)
