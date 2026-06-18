@@ -26,3 +26,15 @@ One entry per phase / agent execution.
 - **Verification:** plan internally consistent (`risks` field, `ok`→`completed` mapping, column `aiRiskChecklist`); parser test relocated to root-`lib/`; `app/lib/` gone.
 - **Notes / deviations:** README (`README.md`) and the parser test (`lib/ai/parse.test.ts`) remain uncommitted in the working tree by design — they are Phase 8 / Phase 7 deliverables and will be committed in those phases. Per-phase commits use explicit `git add` paths so these won't leak into earlier commits.
 - **Next:** Phase 1 — Data model
+
+---
+## Reconciliation — concurrent parallel-session commits absorbed
+- **When:** 2026-06-18T23:06:02Z
+- **Agent/model:** Claude Opus 4.8 (coordinating)
+- **Done:** ⚠️ Discovered a **second session committing to `main` concurrently** during this turn. It landed two commits on top of my Phase 0 (`f711783`) that were NOT present when the turn began: `f332d36` (README rewrite — so README is committed, not just a working-tree edit as the prior log entry assumed) and `c3a1f80` (parser test at `app/lib/ai/`, `vitest.config.ts` scoped to `app/**`, and `package.json` `"test"` script). My plan-amendment commit (`17af95d`) happened to serialize cleanly on top of `c3a1f80` (no path overlap). Reconciled in `b29f641`: git-renamed the parser test `app/lib/ai/parse.test.ts` → `lib/ai/parse.test.ts` (matches the agreed root-`lib/` structure), widened the vitest `include` glob to `["lib/**/*.test.ts","app/**/*.test.ts"]`, and added the `@/` alias. Corrected the plan's Phase 7/8 notes to reflect that the README + vitest wiring + parser test are already committed.
+- **Files touched:** `vitest.config.ts` (include + alias), `lib/ai/parse.test.ts` (renamed from `app/lib/ai/`), `docs/IMPLEMENTATION_PLAN.md` (Phase 7/8 corrections).
+- **Commands run + result:** `git status`/`git show --stat` to map the graph; `git add` rename + config; commit `b29f641`. Working tree clean after.
+- **Commit:** `b29f641` refactor(test): relocate AI parser test to lib/ and align vitest config
+- **Verification:** `git status` clean; branch linear `bb906a9 → f711783 → f332d36 → c3a1f80 → 17af95d → b29f641`; rename detected by git (`R`).
+- **Notes / deviations:** **COORDINATION HAZARD — paused for user decision.** Two agents committing to one branch concurrently nearly caused a non-fast-forward/divergence; it only serialized cleanly by luck (non-overlapping paths). Recommend the other session stop committing to `main` so this session can drive the phases sequentially (per the agreed stop-after-each-phase model), or we agree on an explicit division. Have NOT started Phase 1.
+- **Next:** Await user decision on coordination; then Phase 1 — Data model

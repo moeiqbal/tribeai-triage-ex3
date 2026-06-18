@@ -592,17 +592,24 @@ banner, no crash; visit `/intakes/abc` and `/intakes/999999` → not-found; visi
 **Goal:** automated coverage of validation, AI fallback, and route behavior. Write the negative cases
 in each file BEFORE the passing case.
 
-**Create `vitest.config.ts`:**
+**Already in place from a parallel agent (committed `c3a1f80` + reconciled in `b29f641`):**
+`vitest.config.ts` (node env, `include: ["lib/**/*.test.ts","app/**/*.test.ts"]`, `@/` alias),
+`package.json` `"test": "vitest run"`, and `lib/ai/parse.test.ts`. So Phase 7 = make the parser test
+green (via Phase 3's `lib/ai/parse.ts`) and ADD the remaining test files below. The `vitest.config.ts`
+block here documents the target state for reference — it already exists; verify it matches.
+
+**`vitest.config.ts` (already exists — for reference):**
 ```ts
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts"],
     alias: { "@/": new URL("./", import.meta.url).pathname },
   },
 });
 ```
-**Add to `package.json` scripts:** `"test": "vitest run"`, `"test:watch": "vitest"`.
+**`package.json` scripts:** `"test": "vitest run"` already added; optionally add `"test:watch": "vitest"`.
 
 **`lib/ai/parse.test.ts`** (already authored by a parallel agent — relocated here from `app/lib/ai/`).
 This is the SPEC reliability #4 parser unit and the deterministic complement to the README's manual
@@ -640,9 +647,9 @@ GET unknown id (mock returns null) → 404; GET known id → 200 row. Build a `R
 **Commit:** `test(core): wire vitest and cover AI parser, schemas, triage, and API routes`
 
 ## Phase 8 — README.md
-**Note:** a parallel agent already rewrote `README.md` with these three sections, including an
-"Automated tests — AI response parsing" subsection that commits to the parser unit test. This change
-sits uncommitted in the working tree from now until this phase. Phase 8 = **verify, don't re-draft**:
+**Note:** a parallel agent already rewrote `README.md` with these three sections (committed as
+`f332d36`), including an "Automated tests — AI response parsing" subsection that commits to the parser
+unit test. Phase 8 = **verify, don't re-draft**:
 confirm the README's wording matches what was actually built (field name `risks`, parser returns
 `needs_review`, DB `aiStatus` values `pending/completed/needs_review`, `npm test` runs the parser
 test), fix any drift, then commit.
