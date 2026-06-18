@@ -158,3 +158,15 @@ One entry per phase / agent execution.
 - **Verification:** README How-to-run / What-you-built / Verification sections now match the implementation; documented commands execute successfully.
 - **Notes / deviations:** Field name `risks`, parser `needs_review` return, and `npm test` running the parser test all already matched — only the three drift items above needed fixing.
 - **Next:** Phase 9 — DECISIONS.md
+
+---
+## Phase 9 — DECISIONS.md
+- **When:** 2026-06-18T23:42:00Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Created `DECISIONS.md` (the README already linked to it): executed phase plan; key decisions + why (synchronous in-request AI call; persist-before-triage + never-throw triage; `aiStatus` string union not enum; Prisma 7 driver-adapter requirement + `@/app/generated/prisma/client` import; DeepSeek via openai SDK baseURL with `deepseek-chat`→`deepseek-v4-flash`; Zod safety net since no provider json_schema; `Int` id + JSON-string array columns with `risks`→`aiRiskChecklist` boundary mapping; Client Components for one fetch pattern); how verified (27 tests + live smoke incl. broken-key needs_review + tsc/build); tradeoffs (request blocks on AI, single attempt no retry, no provider schema enforcement, no SSR data); one-more-day list (bg job+retry queue, retry-triage button, Playwright e2e, pagination, json_schema).
+- **Files touched:** `DECISIONS.md` (new).
+- **Commands run + result:** none beyond commit (content-only doc).
+- **Commit:** (Phase 9) docs(decisions): record plan, tradeoffs, and follow-up scope
+- **Verification:** all five Final-Output deliverable docs now present (README, DECISIONS) and code complete; cross-checked decisions against what was actually built/verified this session.
+- **Notes / deviations:** none. This completes the numbered implementation phases (0–9). Remaining work is non-code submission packaging: Loom recording + walkthrough, and the code zip — owned by the user.
+- **Next:** Final walkthrough + handoff packaging (Loom, zip) — user-driven.
