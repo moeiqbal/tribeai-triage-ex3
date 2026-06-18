@@ -38,3 +38,15 @@ One entry per phase / agent execution.
 - **Verification:** `git status` clean; branch linear `bb906a9 → f711783 → f332d36 → c3a1f80 → 17af95d → b29f641`; rename detected by git (`R`).
 - **Notes / deviations:** **COORDINATION HAZARD — paused for user decision.** Two agents committing to one branch concurrently nearly caused a non-fast-forward/divergence; it only serialized cleanly by luck (non-overlapping paths). Recommend the other session stop committing to `main` so this session can drive the phases sequentially (per the agreed stop-after-each-phase model), or we agree on an explicit division. Have NOT started Phase 1.
 - **Next:** Await user decision on coordination; then Phase 1 — Data model
+
+---
+## Phase 1 — Data model
+- **When:** 2026-06-18T23:09:32Z
+- **Agent/model:** Claude Opus 4.8 (sole driver — user parked the other session)
+- **Done:** Added the `Intake` model to `prisma/schema.prisma` (autoincrement `Int` id; 5 intake string fields; `createdAt`; AI columns `aiStatus`/`aiSummary`/`aiTags`/`aiRiskChecklist`/`aiError`, with tags+risks stored as JSON strings). Ran `prisma generate` + `migrate dev --name init_intake`. Added `lib/prisma.ts` — hot-reload-safe singleton wiring the required Prisma 7 driver adapter (`@prisma/adapter-better-sqlite3`).
+- **Files touched:** `prisma/schema.prisma`, `lib/prisma.ts` (new), `prisma/migrations/20260618230813_init_intake/` (new), `package.json` + `package-lock.json` (deps), `.gitignore` (ignore `*.db`).
+- **Commands run + result:** `npm i @prisma/adapter-better-sqlite3@7.8.0 better-sqlite3@12.11.1` → ok; `npm i -D dotenv prisma@7.8.0` (both required to load `prisma.config.ts`) → ok; `npx prisma generate` → client to `app/generated/prisma`; `npx prisma migrate dev --name init_intake` → `dev.db` created, migration applied; `npx tsc --noEmit` → only error is `lib/ai/parse.test.ts` importing `./parse` (expected — Phase 3 file), Phase 1 code clean.
+- **Commit:** `a3ef6c2` feat(db): add Intake model with Prisma driver-adapter singleton
+- **Verification:** generate + migrate succeeded; migration + lock committed; `dev.db` gitignored (local state); singleton type-checks. NOTE: the adapter singleton isn't runtime-exercised yet (migrate uses the engine, not the adapter) — first real runtime use is Phase 4/7.
+- **Notes / deviations:** Two unplanned-but-required dep installs: `dotenv` and `prisma` (the scaffold's `prisma.config.ts` imports both; generate/migrate failed until installed). Generated client has NO package-root index → singleton imports from `@/app/generated/prisma/client` (the plan's "if this differs" fallback). `dev.db` lives at app-root (not `prisma/`) because `DATABASE_URL=file:./dev.db` resolves to cwd.
+- **Next:** Phase 2 — Type contracts (lib/schemas.ts)
