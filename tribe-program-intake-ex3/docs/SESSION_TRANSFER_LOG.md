@@ -134,3 +134,15 @@ One entry per phase / agent execution.
 - **Verification:** ✅ SPEC reliability guarantee end-to-end confirmed — submission persists even when AI fails; UX states all present (loading/empty/error+retry/not-found/needs_review banner).
 - **Notes / deviations:** Detail-page banner is client-rendered (data fetched client-side), so the banner copy is absent from the server HTML shell — it appears post-hydration, driven by the confirmed `needs_review` status. `dev.db` now holds a `completed` row (#1) and a `needs_review` row (#2) — convenient demo state for the Loom.
 - **Next:** Phase 7 — Tests (schemas, triage mock, route mocks; parser test already green)
+
+---
+## Phase 7 — Tests
+- **When:** 2026-06-18T23:37:23Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Verified `vitest.config.ts` matches the plan (node env, lib+app include, `@/` alias) and added four negative-case-first suites alongside the pre-authored `lib/ai/parse.test.ts`: `lib/schemas.test.ts` (empty/missing/over-max intake fields; tags≠3, missing/empty risks, empty summary), `lib/ai-triage.test.ts` (openai mocked → reject/non-JSON/empty → needs_review, valid JSON → completed), `app/api/intakes/route.test.ts` (prisma+ai-triage mocked → 400 bad/invalid body, persist-pending-then-update-completed with JSON-string tags/risks, needs_review persistence, GET list), `app/api/intakes/[id]/route.test.ts` (non-numeric→404, unknown→404, known→200). `npm test` → **27 passed / 5 files**; `npx tsc --noEmit` → CLEAN.
+- **Files touched:** `lib/schemas.test.ts`, `lib/ai-triage.test.ts`, `app/api/intakes/route.test.ts`, `app/api/intakes/[id]/route.test.ts` (all new).
+- **Commands run + result:** `find-docs` (ctx7 `/vitest-dev/vitest`) for the Vitest 4 mocking pattern; `npm test` → 27/27 green; `npx tsc --noEmit` → clean.
+- **Commit:** (Phase 7) test(core): cover schemas, AI triage, and API routes
+- **Verification:** full suite green incl. the SPEC reliability #4 parser unit; type-check clean.
+- **Notes / deviations:** ⚠️ **Vitest 4 gotchas (verified via docs + bisection, not guessed):** (1) `vi.mock` factories are hoisted above imports → must bridge spies in via `vi.hoisted` (the plan's top-level-`const` snippet would hit the TDZ). (2) For the AI-rejection test, `mockRejectedValue`/`Promise.reject` create the rejected promise too eagerly, and — bisected — calling `mockReset`/`mockClear` in a `beforeEach` trips Vitest 4's unhandled-rejection guard for the caught-rejection case even though `runAiTriage` handles it (confirmed it returns `needs_review` when no reset runs). Fix: async-throw mock impl + no `beforeEach` reset on that spy (each test sets its own return; none assert call history). Route tests still use per-spy resets safely (no rejections).
+- **Next:** Phase 8 — README verification
