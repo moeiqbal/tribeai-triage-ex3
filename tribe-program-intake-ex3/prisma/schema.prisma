@@ -11,3 +11,18 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
+
+model Intake {
+  id              Int      @id @default(autoincrement())
+  title           String
+  description     String
+  budgetRange     String
+  timeline        String
+  industry        String
+  createdAt       DateTime @default(now())
+  aiStatus        String   @default("pending") // "pending" | "completed" | "needs_review"
+  aiSummary       String?
+  aiTags          String? // JSON-stringified string[] (parsed on read)
+  aiRiskChecklist String? // JSON-stringified string[] (parsed on read)
+  aiError         String?
+}
