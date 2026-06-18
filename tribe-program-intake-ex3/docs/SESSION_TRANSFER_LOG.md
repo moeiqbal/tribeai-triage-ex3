@@ -74,3 +74,27 @@ One entry per phase / agent execution.
 - **Verification:** full type-check clean; pre-authored parser contract green (well-formed, fenced, prose, missing-field, truncated, empty all covered); committed with explicit paths.
 - **Notes / deviations:** ⚠️ Observed `docs/HANDOFF.md` showing as DELETED in the working tree (`D` in `git status`) — NOT done by this phase and NOT included in the Phase 3 commit (staged explicit paths only). Left untouched/unstaged for the user to decide. The DeepSeek model name (`deepseek-chat`) remains the plan default per the open TBD; not validated against the live API yet (Phase 8).
 - **Next:** Phase 4 — API routes (`app/api/intakes/route.ts` POST/GET + `[id]` GET)
+
+---
+## Live validation — DeepSeek key + model (between Phase 3 and 4, user-requested)
+- **When:** 2026-06-18T23:24:00Z (approx)
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** At the user's request, validated `DEEPSEEK_API_KEY` with a throwaway script exercising the exact app path (openai SDK → `https://api.deepseek.com`, `response_format: json_object`, model `deepseek-chat`, same prompt shape as `lib/ai-triage.ts`). Call SUCCEEDED: key authenticates; returned clean JSON with `summary` + exactly 3 `tags` + 3 `risks` (satisfies `aiTriageOutputSchema` → would parse `status: "ok"`); 187 total tokens.
+- **Files touched:** `scripts/validate-deepseek.mjs` (created then DELETED — throwaway, not committed).
+- **Commands run + result:** `node scripts/validate-deepseek.mjs` → ✅ success.
+- **Commit:** none (validation only).
+- **Verification:** end-to-end AI path confirmed working before route wiring.
+- **Notes / deviations:** ⚠️ **Model-name TBD RESOLVED:** requested `"deepseek-chat"` but the response reported `model: deepseek-v4-flash` — so `deepseek-chat` is a valid alias resolving to `deepseek-v4-flash`. The plan's `deepseek-chat` works as-is; no code change needed.
+- **Next:** Phase 4 — API routes
+
+---
+## Phase 4 — API routes
+- **When:** 2026-06-18T23:24:00Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Created `app/api/intakes/route.ts` (GET lists newest-first; POST validates via `intakeCreateSchema.safeParse` → 400 on bad JSON / validation fail, persists raw intake with `aiStatus: "pending"` BEFORE the AI call, runs `runAiTriage`, then updates the same row → `completed` with `aiSummary`/`aiTags`/`aiRiskChecklist` (tags+risks `JSON.stringify`'d, `risks`→`aiRiskChecklist`) or `needs_review` with `aiError`; returns 201) and `app/api/intakes/[id]/route.ts` (GET-by-id, Next 16 async `params: Promise<...>`, non-integer guard, 404 on miss). Both verbatim from the plan.
+- **Files touched:** `app/api/intakes/route.ts` (new), `app/api/intakes/[id]/route.ts` (new).
+- **Commands run + result:** verified Next 16 route-handler `params` signature against `node_modules/next/dist/docs/01-app/.../route.md` (confirms `{ params }: { params: Promise<{ id: string }> }` + `await params`); `npx tsc --noEmit` → CLEAN; `npm run build` → ✓ compiled, both routes registered dynamic (`ƒ /api/intakes`, `ƒ /api/intakes/[id]`).
+- **Commit:** `301a670` feat(api): add POST/GET intake routes with AI triage round-trip
+- **Verification:** type-check + production build both pass; committed with explicit paths.
+- **Notes / deviations:** Prisma driver adapter still not exercised at RUNTIME (build does static analysis only; first true runtime DB hit is a live POST). Deferred to a runtime smoke test (offered to user) / Phase 8. `.next/` is gitignored — not staged.
+- **Next:** Phase 5 — Frontend flow (Client Components: list, new-intake form, detail)
