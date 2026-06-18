@@ -146,3 +146,15 @@ One entry per phase / agent execution.
 - **Verification:** full suite green incl. the SPEC reliability #4 parser unit; type-check clean.
 - **Notes / deviations:** ⚠️ **Vitest 4 gotchas (verified via docs + bisection, not guessed):** (1) `vi.mock` factories are hoisted above imports → must bridge spies in via `vi.hoisted` (the plan's top-level-`const` snippet would hit the TDZ). (2) For the AI-rejection test, `mockRejectedValue`/`Promise.reject` create the rejected promise too eagerly, and — bisected — calling `mockReset`/`mockClear` in a `beforeEach` trips Vitest 4's unhandled-rejection guard for the caught-rejection case even though `runAiTriage` handles it (confirmed it returns `needs_review` when no reset runs). Fix: async-throw mock impl + no `beforeEach` reset on that spy (each test sets its own return; none assert call history). Route tests still use per-spy resets safely (no rejections).
 - **Next:** Phase 8 — README verification
+
+---
+## Phase 8 — README verification
+- **When:** 2026-06-18T23:40:00Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Verified the pre-authored `README.md` (committed `f332d36`) against the actual build and fixed drift (no rewrite): (1) DB-init now includes `npx prisma generate` (generated client is gitignored) + a `better-sqlite3`/node-gyp troubleshooting note; (2) documented the three `aiStatus` values (`pending`/`completed`/`needs_review`) in the reliability bullet and removed the never-used `failed` status from checklist #6; (3) broadened the Verification → automated-tests section from parser-only to the full 27-test/5-file suite (schemas, triage, routes), keeping the parser unit called out as the SPEC reliability #4 highlight.
+- **Files touched:** `README.md` (edits only).
+- **Commands run + result:** `npm test` → 27/27 across 5 files (matches the README's new claim); `npx prisma generate` → client generated (README step works).
+- **Commit:** `1e72b4f` docs(readme): align with build — prisma generate, aiStatus values, full test suite
+- **Verification:** README How-to-run / What-you-built / Verification sections now match the implementation; documented commands execute successfully.
+- **Notes / deviations:** Field name `risks`, parser `needs_review` return, and `npm test` running the parser test all already matched — only the three drift items above needed fixing.
+- **Next:** Phase 9 — DECISIONS.md
