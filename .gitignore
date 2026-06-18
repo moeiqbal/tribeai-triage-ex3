@@ -1,0 +1,16 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# candidate exercise reference material — not part of the deliverable
+DEEPSEEK_API_REFERENCE.md
+Exercise 3 - Brief .md
+Exercise 3 - Brief .pdf
+Exercise 3 - Pre-read .md
+Exercise 3 - Pre-read .pdf
+Exercise 3 - Final output doc .md
+Exercise 3 - Final output doc .pdf
+
+# os
+.DS_Store
