@@ -34,8 +34,11 @@ DEEPSEEK_API_KEY=sk-...
 
 ### Initialize the database
 ```bash
-npx prisma migrate dev
+npx prisma generate    # the generated client is gitignored — generate it after install
+npx prisma migrate dev # applies the migration and creates ./dev.db
 ```
+> Troubleshooting: if `better-sqlite3` fails to install, you may need build
+> tools / Python available for `node-gyp`.
 
 ### Run
 ```bash
@@ -56,17 +59,21 @@ Open **http://localhost:3000**.
   error state.
 - **Reliability**: the raw intake is persisted *before* the AI call, so a
   submission is never lost if the LLM fails or is unavailable; on AI
-  failure the intake is flagged for manual review instead of crashing.
+  failure the intake is flagged for manual review instead of crashing. Each
+  intake carries an `aiStatus` of `pending` (persisted, triage not yet
+  resolved), `completed` (summary/tags/risks stored), or `needs_review` (call
+  failed or output unparseable — `aiError` retained for review).
 
 ---
 
 ## C) Verification
 
 Correctness is demonstrated two ways: a **manual verification checklist**
-covering the end-to-end flow and UX states, plus a focused **unit test** on the
-AI response parser (the one failure mode that's hard to catch by clicking
-through). Each manual item names the SPEC requirement it exercises so the run
-doubles as a compliance check.
+covering the end-to-end flow and UX states, plus an **automated test suite**
+(`npm test`, Vitest) covering validation, AI parsing/triage, and the API routes
+— with the AI response parser, the one failure mode that's hard to catch by
+clicking through, called out specifically. Each manual item names the SPEC
+requirement it exercises so the run doubles as a compliance check.
 
 ### Manual verification checklist
 
@@ -127,28 +134,35 @@ doubles as a compliance check.
       detail page) — the user's submission is never lost.
 - [ ] The detail view shows a **manual-review / AI-unavailable message**
       instead of crashing or showing a blank/broken AI section.
-- [ ] The stored AI status reflects the failure (e.g. `failed` /
-      `needs_review`) rather than pretending success.
+- [ ] The stored AI status reflects the failure (`needs_review`, with the
+      error captured in `aiError`) rather than pretending success.
 - [ ] Restore the key, restart, and confirm new intakes triage normally again.
 - _Covers: reliability → persist-before-AI, graceful AI-failure handling,
   manual-review fallback._
 
-### Automated tests — AI response parsing
-
-The one piece of logic that can silently break the AI feature is **parsing the
-LLM response into our expected structure** (summary / 3 tags / risk bullets).
-LLM output is non-deterministic, so we don't try to force the live model to emit
-malformed output — instead we unit-test the parser directly and assert it
-degrades gracefully.
+### Automated tests
 
 ```bash
-npm test   # vitest
+npm test   # vitest — 27 tests across 5 files
 ```
 
-Parser coverage:
-- [ ] Well-formed AI output parses into `{ summary, tags[3], risks[] }`.
-- [ ] Malformed / non-JSON AI output yields a `needs_review` status (and retains
-      the raw output) instead of throwing.
+The suite (negative cases first) covers:
+- **AI response parser** (`lib/ai/parse.test.ts`) — the one piece of logic that
+  can silently break the AI feature. LLM output is non-deterministic, so we
+  don't force the live model to emit malformed output; we unit-test the parser
+  directly with hardcoded strings and assert it degrades gracefully:
+  well-formed → `{ summary, tags[3], risks[] }`; markdown-fenced JSON →
+  parsed; non-JSON / missing-field / truncated / empty → `needs_review` with
+  the raw output retained, never throwing.
+- **Schemas** (`lib/schemas.test.ts`) — server-side validation rejects
+  empty/missing/over-max intake fields and malformed AI output.
+- **AI triage** (`lib/ai-triage.test.ts`) — with the LLM client mocked, a
+  failed call / non-JSON / empty response all converge on `needs_review`, and
+  valid JSON yields `completed`.
+- **API routes** (`app/api/intakes/route.test.ts`,
+  `app/api/intakes/[id]/route.test.ts`) — bad/invalid bodies return 400; a
+  valid POST persists the intake *before* triage and stores the outcome;
+  unknown/non-numeric ids return 404.
 
 Note: the *user-facing* result of a parse failure is the same manual-review
 message exercised end-to-end in checklist **#6** (AI unavailable). The unit test
