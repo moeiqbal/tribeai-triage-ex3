@@ -50,3 +50,15 @@ One entry per phase / agent execution.
 - **Verification:** generate + migrate succeeded; migration + lock committed; `dev.db` gitignored (local state); singleton type-checks. NOTE: the adapter singleton isn't runtime-exercised yet (migrate uses the engine, not the adapter) — first real runtime use is Phase 4/7.
 - **Notes / deviations:** Two unplanned-but-required dep installs: `dotenv` and `prisma` (the scaffold's `prisma.config.ts` imports both; generate/migrate failed until installed). Generated client has NO package-root index → singleton imports from `@/app/generated/prisma/client` (the plan's "if this differs" fallback). `dev.db` lives at app-root (not `prisma/`) because `DATABASE_URL=file:./dev.db` resolves to cwd.
 - **Next:** Phase 2 — Type contracts (lib/schemas.ts)
+
+---
+## Phase 2 — Type contracts
+- **When:** 2026-06-18T23:14:09Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Created `lib/schemas.ts` (root `lib/`) verbatim from the plan: `intakeCreateSchema` (5 trimmed string fields — title/description/budgetRange/timeline/industry — each `.min(1, { error })` with field-specific required messages + `.max()` caps) and `aiTriageOutputSchema` (`summary` non-empty, `tags` exactly length 3, `risks` `.min(1)`). Exported inferred types `IntakeCreateInput` and `AiTriageOutput` via `z.infer`. Field is `risks` (DB column `aiRiskChecklist` mapped later in Phase 4).
+- **Files touched:** `lib/schemas.ts` (new).
+- **Commands run + result:** verified Zod 4.4.3 installed; `find-docs` (ctx7 `/websites/zod_dev_v4`) confirmed Zod 4 unified `error` param (`message` deprecated) and `z.array().min(1)`/`.length()` + `z.infer` syntax — plan code matches; `npx tsc --noEmit` → only pre-existing `lib/ai/parse.test.ts` `./parse` error (expected, Phase 3), `lib/schemas.ts` clean.
+- **Commit:** `01d8b2a` feat(schemas): add Zod contracts for intake input and AI output
+- **Verification:** type-check clean for the new file; only the known Phase-3 RED test import remains; committed with explicit path (no leakage).
+- **Notes / deviations:** none. Verified Zod 4 syntax against current docs before writing (don't-trust-but-verify) rather than coding from memory.
+- **Next:** Phase 3 — AI triage (parser unit `lib/ai/parse.ts` + network caller `lib/ai-triage.ts`)
