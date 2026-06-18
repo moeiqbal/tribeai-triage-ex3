@@ -98,3 +98,27 @@ One entry per phase / agent execution.
 - **Verification:** type-check + production build both pass; committed with explicit paths.
 - **Notes / deviations:** Prisma driver adapter still not exercised at RUNTIME (build does static analysis only; first true runtime DB hit is a live POST). Deferred to a runtime smoke test (offered to user) / Phase 8. `.next/` is gitignored — not staged.
 - **Next:** Phase 5 — Frontend flow (Client Components: list, new-intake form, detail)
+
+---
+## Smoke test — Phase 4 API runtime verification (user-requested)
+- **When:** 2026-06-18T23:25:00Z (approx)
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Ran the dev server and exercised every route end-to-end before building UI. Results: `GET /api/intakes` → `200 []`; `POST` valid intake → `201`, persisted id:1 with `aiStatus: "completed"`, real DeepSeek summary + 3 tags + 3 risks, `aiError: null`; `GET /api/intakes/1` → `200` full record; `GET /api/intakes/999` → `404`; `GET /api/intakes/abc` (non-integer) → `404`; `POST` blank/missing fields → `400` Zod issues incl. "Title is required"; `POST` malformed JSON → `400` "Request body must be valid JSON".
+- **Files touched:** none (left `dev.db` with one test row — gitignored local state).
+- **Commands run + result:** `npm run dev` + `curl` matrix (7 cases) — all behaved as specified.
+- **Commit:** none (verification only).
+- **Verification:** ✅ Prisma `better-sqlite3` driver adapter CONFIRMED working at runtime (closes the gap flagged since Phase 1); persist-then-triage-then-update flow proven; both 400 paths and both 404 paths correct; `aiTags`/`aiRiskChecklist` store JSON strings (`risks`→`aiRiskChecklist` mapping correct).
+- **Notes / deviations:** Hit a stale `next dev` lock (an orphaned PID 77939 made the first launch bail to port 3001 then exit); killed leftovers and relaunched cleanly on :3000. AI `needs_review` path not exercised live (key healthy) — covered by parser unit tests + `runAiTriage` try/catch.
+- **Next:** Phase 5 — Frontend flow
+
+---
+## Phase 5 — Frontend flow
+- **When:** 2026-06-18T23:27:00Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Built the three Client-Component pages + shared chrome, verbatim from the plan. `app/layout.tsx`: metadata title→"Project Intake Triage" + real description, shared header nav (Intake Triage / New intake) inside `<body>` before children (font/className wiring untouched). `app/page.tsx` (list): loading / error+Retry / empty / populated states, each row links to detail and shows industry · date · aiStatus badge. `app/intakes/new/page.tsx` (form): controlled inputs, submit disabled until all filled, "Submitting…" state, surfaces API `error` text, redirects to `/intakes/{created.id}` on success. `app/intakes/[id]/page.tsx` (detail): Next 16 `use(params)`, parses `aiTags`/`aiRiskChecklist` JSON, renders summary/tags/risks when `completed`, else an amber pending/manual-review banner (with collapsible `aiError`) so a failed triage never blocks viewing the saved submission; 404 → friendly not-found.
+- **Files touched:** `app/layout.tsx` (edit), `app/page.tsx` (replaced scaffold), `app/intakes/new/page.tsx` (new), `app/intakes/[id]/page.tsx` (new).
+- **Commands run + result:** `npx tsc --noEmit` → CLEAN; `npm run dev` + curl render check — `/`, `/intakes/new`, `/intakes/1`, `/intakes/999` all `200`, no errors in dev log; rendered HTML confirmed to contain header ("Intake Triage", "New intake"), document title ("Project Intake Triage"), list loading state, and form fields (Description / Budget range / Timeline / Create intake).
+- **Commit:** `e044f75` feat(ui): add intake list, create form, and detail pages
+- **Verification:** type-check clean; all routes render server-side without errors; expected content present in HTML; committed with explicit paths.
+- **Notes / deviations:** Pages are client components (`"use client"`) so initial HTML is the shell + loading state; data hydrates client-side via fetch — matches the plan's single consistent fetch pattern. Full interactive click-through (form submit → redirect) best confirmed in a real browser during the Loom; server-side render + the Phase 4 smoke test together already prove the data path.
+- **Next:** Phase 6 — UX states hardening
