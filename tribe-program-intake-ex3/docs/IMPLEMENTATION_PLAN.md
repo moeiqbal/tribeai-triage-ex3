@@ -55,6 +55,18 @@ reality diverges from this plan (e.g. a generated import path differs), STOP and
 - **`aiStatus`** = plain `String` union `"pending" | "completed" | "needs_review"` (not a Prisma enum).
 - **Plan is copied into the repo at `docs/IMPLEMENTATION_PLAN.md`; activity recorded in
   `docs/SESSION_TRANSFER_LOG.md`** (append-only).
+- **AI response parsing is its own pure, testable unit** `lib/ai/parse.ts` →
+  `parseAiResponse(raw)` (no network/DB), separate from the network call in `lib/ai-triage.ts`.
+  This satisfies SPEC reliability #4 and makes the parse-failure path unit-testable
+  deterministically (you can't reliably force a live LLM to emit malformed output).
+- **LLM JSON field name = `risks`** (the schema + prompt + parser all use `risks`), but the
+  **DB column stays `aiRiskChecklist`** (Phase-1 locked) — map `risks` → `aiRiskChecklist` at the
+  storage boundary. **Parser's local status = `"ok" | "needs_review"`**, mapped `ok`→DB `completed`.
+- **A parallel agent pre-authored `lib/ai/parse.test.ts` (relocated from `app/lib/ai/`) and rewrote
+  `README.md`.** Both are adopted: the test is the Phase-7 parser unit; the README is finalized in
+  Phase 8. As of this amendment the test is NOT yet runnable (no `lib/ai/parse.ts`, no
+  `vitest.config.ts`, no `test` script) — Phases 3/7 make it pass. README + test stay uncommitted in
+  the working tree until their owning phases (8 / 7) commit them.
 
 ---
 
@@ -146,26 +158,63 @@ export type IntakeCreateInput = z.infer<typeof intakeCreateSchema>;
 export const aiTriageOutputSchema = z.object({
   summary: z.string().trim().min(1),
   tags: z.array(z.string().trim().min(1)).length(3),
-  riskChecklist: z.array(z.string().trim().min(1)).min(1),
+  risks: z.array(z.string().trim().min(1)).min(1),
 });
 export type AiTriageOutput = z.infer<typeof aiTriageOutputSchema>;
 ```
+Field is `risks` (not `riskChecklist`) — the LLM JSON contract, this schema, and `parseAiResponse`
+all agree on `risks`; only the DB column is `aiRiskChecklist` (mapped in Phase 4).
 **Verify:** `npx tsc --noEmit` passes.
 **Commit:** `feat(schemas): add Zod contracts for intake input and AI output`
 
-## Phase 3 — AI triage
-**Goal:** one function that calls DeepSeek and ALWAYS returns a typed result, never throws.
+## Phase 3 — AI triage (parser unit + network call)
+**Goal:** a pure, unit-testable parser (`lib/ai/parse.ts`) plus a network caller (`lib/ai-triage.ts`)
+that ALWAYS returns a typed result and never throws. Both AI failure modes (call fails / output
+unparseable) converge on `needs_review`.
 
 **Install:** `npm install openai@6.44.0` (env already wired — verify `.env` has `DEEPSEEK_API_KEY`).
 
-**Create `lib/ai-triage.ts`:**
+**Create `lib/ai/parse.ts`** — pure function, no network/DB, never throws, retains `raw`. Must satisfy
+the pre-authored `lib/ai/parse.test.ts` contract (status `"ok"|"needs_review"`, fields
+`summary/tags/risks/raw`, markdown-fence tolerance):
+```ts
+import { aiTriageOutputSchema } from "@/lib/schemas";
+
+export type ParsedAiResponse = {
+  status: "ok" | "needs_review";
+  summary: string;
+  tags: string[];
+  risks: string[];
+  raw: string; // always the original input — nothing is lost
+};
+
+// LLMs commonly wrap JSON in ```json ... ``` fences; strip them before parsing.
+function stripFences(s: string): string {
+  const t = s.trim();
+  const m = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return (m ? m[1] : t).trim();
+}
+
+export function parseAiResponse(raw: string): ParsedAiResponse {
+  const fallback: ParsedAiResponse = { status: "needs_review", summary: "", tags: [], risks: [], raw };
+  try {
+    const candidate = stripFences(raw);
+    if (!candidate) return fallback;
+    const json: unknown = JSON.parse(candidate); // throws on non-JSON/truncated → caught below
+    const result = aiTriageOutputSchema.safeParse(json); // enforces summary, 3 tags, ≥1 risk
+    if (!result.success) return fallback;
+    return { status: "ok", ...result.data, raw };
+  } catch {
+    return fallback;
+  }
+}
+```
+
+**Create `lib/ai-triage.ts`** — does the network call, then delegates parsing to `parseAiResponse`:
 ```ts
 import OpenAI from "openai";
-import {
-  aiTriageOutputSchema,
-  type AiTriageOutput,
-  type IntakeCreateInput,
-} from "@/lib/schemas";
+import { type AiTriageOutput, type IntakeCreateInput } from "@/lib/schemas";
+import { parseAiResponse } from "@/lib/ai/parse";
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY!,
@@ -174,14 +223,14 @@ const client = new OpenAI({
 });
 
 export type AiTriageResult =
-  | ({ status: "completed" } & AiTriageOutput)
-  | { status: "needs_review"; error: string };
+  | ({ status: "completed" } & AiTriageOutput)        // AiTriageOutput = { summary, tags, risks }
+  | { status: "needs_review"; error: string; raw?: string };
 
 const SYSTEM_PROMPT = `You are a project-intake triage assistant. Given a project request, respond with ONLY a JSON object with this exact shape and nothing else:
 {
-  "summary": string,        // 2-3 sentence plain-English summary of the request
-  "tags": string[],         // exactly 3 short topical tags
-  "riskChecklist": string[] // 1 or more short bullet strings flagging risks, unknowns, or open questions
+  "summary": string,  // 2-3 sentence plain-English summary of the request
+  "tags": string[],   // exactly 3 short topical tags
+  "risks": string[]   // 1 or more short bullet strings flagging risks, unknowns, or open questions
 }
 Do not include markdown, code fences, or any text outside the JSON object.`;
 
@@ -201,31 +250,23 @@ export async function runAiTriage(input: IntakeCreateInput): Promise<AiTriageRes
       ],
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return { status: "needs_review", error: "AI returned an empty response" };
-
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(content);
-    } catch {
-      return { status: "needs_review", error: "AI response was not valid JSON" };
+    const content = completion.choices[0]?.message?.content ?? "";
+    const parsed = parseAiResponse(content); // parse-failure mode
+    if (parsed.status !== "ok") {
+      return { status: "needs_review", error: "AI response could not be parsed into the expected shape", raw: content };
     }
-
-    const result = aiTriageOutputSchema.safeParse(parsedJson);
-    if (!result.success) {
-      return { status: "needs_review", error: `AI response did not match expected shape: ${result.error.message}` };
-    }
-
-    return { status: "completed", ...result.data };
+    return { status: "completed", summary: parsed.summary, tags: parsed.tags, risks: parsed.risks };
   } catch (err) {
+    // call-failure mode (network/timeout/auth) — same user-facing outcome as parse failure.
     const message = err instanceof Error ? err.message : "Unknown error calling AI provider";
     return { status: "needs_review", error: message };
   }
 }
 ```
-**Verify:** `npx tsc --noEmit` passes. (Live API call is exercised manually in phase 8; unit-tested
-with a mock in phase 7 — do not call the real API here.)
-**Commit:** `feat(ai): add DeepSeek triage call with JSON-mode and Zod safety net`
+**Verify:** `npx tsc --noEmit` passes. (Live API call is exercised manually in phase 8; parser is
+unit-tested in phase 7 with hardcoded strings; the network path is mocked in phase 7 — do not call the
+real API here.)
+**Commit:** `feat(ai): add AI response parser unit and DeepSeek triage caller`
 
 ## Phase 4 — API routes
 **Goal:** POST creates+persists+triages, GET lists, GET-by-id reads; submission never lost on AI fail.
@@ -269,7 +310,7 @@ export async function POST(request: Request) {
             aiStatus: "completed",
             aiSummary: result.summary,
             aiTags: JSON.stringify(result.tags),
-            aiRiskChecklist: JSON.stringify(result.riskChecklist),
+            aiRiskChecklist: JSON.stringify(result.risks), // `risks` → column `aiRiskChecklist`
           },
         })
       : await prisma.intake.update({
@@ -563,9 +604,17 @@ export default defineConfig({
 ```
 **Add to `package.json` scripts:** `"test": "vitest run"`, `"test:watch": "vitest"`.
 
+**`lib/ai/parse.test.ts`** (already authored by a parallel agent — relocated here from `app/lib/ai/`).
+This is the SPEC reliability #4 parser unit and the deterministic complement to the README's manual
+checklist. Do NOT rewrite it; make `lib/ai/parse.ts` (Phase 3) satisfy it. Its contract: well-formed
+output → `status:"ok"` with `summary`, `tags` (length 3), `risks` (≥1); markdown-fenced JSON → `ok`;
+non-JSON prose / missing fields / truncated JSON / empty string → `status:"needs_review"` with `raw`
+retained and **no throw**. (Parse-failure path is tested here with hardcoded strings — never by trying
+to force the live LLM to emit bad output.)
+
 **`lib/schemas.test.ts`** — negatives first: empty/missing/over-max field on `intakeCreateSchema`;
-`tags.length !== 3`, missing `riskChecklist`, empty `riskChecklist`, empty `summary` on
-`aiTriageOutputSchema`; then one valid pass each. Use `.safeParse(...).success` assertions.
+`tags.length !== 3`, missing `risks`, empty `risks`, empty `summary` on `aiTriageOutputSchema`; then
+one valid pass each. Use `.safeParse(...).success` assertions.
 
 **`lib/ai-triage.test.ts`** — `vi.mock("openai", ...)` so the constructed client's
 `chat.completions.create` is a `vi.fn()`. Cases (negatives first): mock rejects (network error) →
@@ -587,11 +636,17 @@ and `vi.mock("@/lib/ai-triage")`. Cases: POST invalid body → 400 with `issues`
 `aiStatus:"needs_review"`; GET list (mock returns `[]`) → 200 `[]`; `[id]` GET non-numeric id → 404;
 GET unknown id (mock returns null) → 404; GET known id → 200 row. Build a `Request` with
 `new Request("http://x", { method:"POST", body: JSON.stringify(...) })` and call the handler directly.
-**Verify:** `npm test` → all green.
-**Commit:** `test(core): add vitest config and negative-first coverage for schemas, AI triage, and API routes`
+**Verify:** `npm test` → all green (including the pre-authored `lib/ai/parse.test.ts`).
+**Commit:** `test(core): wire vitest and cover AI parser, schemas, triage, and API routes`
 
 ## Phase 8 — README.md
-**Goal:** the three Final-Output-Doc sections, concrete to this repo. Rewrite `README.md`:
+**Note:** a parallel agent already rewrote `README.md` with these three sections, including an
+"Automated tests — AI response parsing" subsection that commits to the parser unit test. This change
+sits uncommitted in the working tree from now until this phase. Phase 8 = **verify, don't re-draft**:
+confirm the README's wording matches what was actually built (field name `risks`, parser returns
+`needs_review`, DB `aiStatus` values `pending/completed/needs_review`, `npm test` runs the parser
+test), fix any drift, then commit.
+**Goal:** the three Final-Output-Doc sections, concrete to this repo. Sections:
 - **How to run:** prereqs (Node 20+, npm); `npm install`; env table (`DATABASE_URL=file:./dev.db`,
   `DEEPSEEK_API_KEY=…` — both already in gitignored `.env`); `npx prisma generate && npx prisma
   migrate dev`; `npm run dev`; open `http://localhost:3000`. One-line troubleshooting note: if
@@ -660,9 +715,10 @@ One entry per phase / agent execution.
 - `docs/IMPLEMENTATION_PLAN.md` and `docs/SESSION_TRANSFER_LOG.md` present and current.
 
 ## File manifest
-**New:** `lib/prisma.ts`, `lib/schemas.ts`, `lib/ai-triage.ts`, `app/api/intakes/route.ts`,
-`app/api/intakes/[id]/route.ts`, `app/intakes/new/page.tsx`, `app/intakes/[id]/page.tsx`,
-`app/not-found.tsx`, `vitest.config.ts`, `lib/schemas.test.ts`, `lib/ai-triage.test.ts`,
+**New:** `lib/prisma.ts`, `lib/schemas.ts`, `lib/ai/parse.ts`, `lib/ai-triage.ts`,
+`app/api/intakes/route.ts`, `app/api/intakes/[id]/route.ts`, `app/intakes/new/page.tsx`,
+`app/intakes/[id]/page.tsx`, `app/not-found.tsx`, `vitest.config.ts`, `lib/ai/parse.test.ts`
+(pre-authored, relocated from `app/lib/ai/`), `lib/schemas.test.ts`, `lib/ai-triage.test.ts`,
 `app/api/intakes/route.test.ts`, `app/api/intakes/[id]/route.test.ts`, `DECISIONS.md`,
 `docs/IMPLEMENTATION_PLAN.md`, `docs/SESSION_TRANSFER_LOG.md`.
 **Edited:** `prisma/schema.prisma`, `app/page.tsx`, `app/layout.tsx`, `package.json`, `README.md`.
