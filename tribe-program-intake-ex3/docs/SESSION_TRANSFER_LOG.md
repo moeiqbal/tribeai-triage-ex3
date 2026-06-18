@@ -122,3 +122,15 @@ One entry per phase / agent execution.
 - **Verification:** type-check clean; all routes render server-side without errors; expected content present in HTML; committed with explicit paths.
 - **Notes / deviations:** Pages are client components (`"use client"`) so initial HTML is the shell + loading state; data hydrates client-side via fetch — matches the plan's single consistent fetch pattern. Full interactive click-through (form submit → redirect) best confirmed in a real browser during the Loom; server-side render + the Phase 4 smoke test together already prove the data path.
 - **Next:** Phase 6 — UX states hardening
+
+---
+## Phase 6 — UX states hardening
+- **When:** 2026-06-18T23:30:39Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Created `app/not-found.tsx` (generic bad-route 404). Confirmed the Phase-5 hardening already in place: detail-page amber banner for `needs_review` vs `pending`, `aiError` behind `<details>`, raw intake fields always render, `parseList` guard (malformed stored JSON → banner not crash); form `disabled={submitting || !allFilled}` + top-of-handler `if (submitting || !allFilled) return;` double-submit guard; list error-state Retry re-runs `load()`.
+- **Files touched:** `app/not-found.tsx` (new).
+- **Commands run + result:** `npx tsc --noEmit` → CLEAN. **AI-failure path proven live:** started dev with `DEEPSEEK_API_KEY=sk-broken-invalid-key` (shell env overrides `.env` in Next), POSTed an intake → `201`, row persisted as id:2 with `aiStatus: "needs_review"`, `aiSummary/aiTags/aiRiskChecklist` null, `aiError: "401 Authentication Fails…"`, no crash. `/totally-bad-route` → `404` + "Page not found" (not-found.tsx). `/intakes/abc` + `/intakes/999` already 404 (Phase 5). 
+- **Commit:** `ea91654` fix(ux): add manual-review banner, double-submit guard, and 404 page
+- **Verification:** ✅ SPEC reliability guarantee end-to-end confirmed — submission persists even when AI fails; UX states all present (loading/empty/error+retry/not-found/needs_review banner).
+- **Notes / deviations:** Detail-page banner is client-rendered (data fetched client-side), so the banner copy is absent from the server HTML shell — it appears post-hydration, driven by the confirmed `needs_review` status. `dev.db` now holds a `completed` row (#1) and a `needs_review` row (#2) — convenient demo state for the Loom.
+- **Next:** Phase 7 — Tests (schemas, triage mock, route mocks; parser test already green)
