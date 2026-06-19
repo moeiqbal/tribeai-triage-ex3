@@ -170,3 +170,15 @@ One entry per phase / agent execution.
 - **Verification:** all five Final-Output deliverable docs now present (README, DECISIONS) and code complete; cross-checked decisions against what was actually built/verified this session.
 - **Notes / deviations:** none. This completes the numbered implementation phases (0–9). Remaining work is non-code submission packaging: Loom recording + walkthrough, and the code zip — owned by the user.
 - **Next:** Final walkthrough + handoff packaging (Loom, zip) — user-driven.
+
+---
+## Bugfix — missing API key no longer crashes the route
+- **When:** 2026-06-19T00:24:10Z
+- **Agent/model:** Claude Opus 4.8 (sole driver)
+- **Done:** Found (while the user had `DEEPSEEK_API_KEY` commented out) that `lib/ai-triage.ts` constructed the OpenAI client at module-load with `process.env.DEEPSEEK_API_KEY!` — with the key absent, the constructor threw at import, so `app/api/intakes/route.ts` failed to load and ALL requests (incl. GET list) returned 500, bypassing `runAiTriage`'s try/catch. Fixed: removed the module-level client; `runAiTriage` now guards a missing/empty key (returns `needs_review` with "AI provider is not configured…") and constructs the client lazily inside the existing `try`, so missing AND invalid keys both converge on `needs_review` and the route keeps serving. Updated `lib/ai-triage.test.ts`: `vi.stubEnv` a present key by default (+ `vi.unstubAllEnvs` afterEach), added a missing-key test asserting `needs_review` without calling the API.
+- **Files touched:** `lib/ai-triage.ts`, `lib/ai-triage.test.ts`.
+- **Commands run + result:** `npx tsc --noEmit` → clean (dropped the `!` assertion); `npm test` → 28/28 green; live against the dev server with the key still commented out → `GET /api/intakes` 200 (was 500), `POST` 201 persisted as `needs_review` with the not-configured message in `aiError`, `GET /:id` 200.
+- **Commit:** `51c1398` fix(ai): build LLM client lazily so a missing API key degrades to needs_review
+- **Verification:** ✅ both AI failure paths now graceful (missing key + invalid key → `needs_review`); SPEC "never lose a submission" guarantee holds for missing config too; unrelated endpoints unaffected.
+- **Notes / deviations:** Earlier live test used an invalid-but-present key (constructor succeeds, call fails → caught), which masked this missing-key-at-module-load path. Not yet pushed to GitHub (offered separately).
+- **Next:** Push fix to GitHub (on user OK); resume walkthrough/handoff.
