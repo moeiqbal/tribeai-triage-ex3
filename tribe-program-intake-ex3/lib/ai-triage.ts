@@ -2,12 +2,6 @@ import OpenAI from "openai";
 import { type AiTriageOutput, type IntakeCreateInput } from "@/lib/schemas";
 import { parseAiResponse } from "@/lib/ai/parse";
 
-const client = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY!,
-  baseURL: "https://api.deepseek.com",
-  timeout: 20_000, // bounds the synchronous POST so the form spinner can't hang
-});
-
 export type AiTriageResult =
   | ({ status: "completed" } & AiTriageOutput)        // AiTriageOutput = { summary, tags, risks }
   | { status: "needs_review"; error: string; raw?: string };
@@ -21,7 +15,19 @@ const SYSTEM_PROMPT = `You are a project-intake triage assistant. Given a projec
 Do not include markdown, code fences, or any text outside the JSON object.`;
 
 export async function runAiTriage(input: IntakeCreateInput): Promise<AiTriageResult> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    // Missing config must degrade like any other AI failure — never crash the
+    // route. (The client is built lazily below so a missing key can't throw at
+    // module-load time and take down the whole route, including GET/list.)
+    return { status: "needs_review", error: "AI provider is not configured (DEEPSEEK_API_KEY is missing)" };
+  }
   try {
+    const client = new OpenAI({
+      apiKey,
+      baseURL: "https://api.deepseek.com",
+      timeout: 20_000, // bounds the synchronous POST so the form spinner can't hang
+    });
     const completion = await client.chat.completions.create({
       model: "deepseek-chat",
       temperature: 0.3,
